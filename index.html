@@ -236,6 +236,8 @@ function Login({ onLogin }) {
 function ItemEditor({ menu, onClose, onSave }) {
   const [secs, setSecs] = useState(JSON.parse(JSON.stringify(menu.sections)));
   const [newT, setNewT] = useState({});
+  const [editIdx, setEditIdx] = useState({}); // {si-ii: text}
+
   const del = (si, ii) => setSecs(p => p.map((s, i) => i !== si ? s : { ...s, items: s.items.filter((_, j) => j !== ii) }));
   const add = (si) => {
     const t = (newT[si]||"").trim();
@@ -243,23 +245,76 @@ function ItemEditor({ menu, onClose, onSave }) {
     setSecs(p => p.map((s, i) => i !== si ? s : { ...s, items: [...s.items, { text:t, req:false }] }));
     setNewT(p => ({ ...p, [si]:"" }));
   };
+  const moveUp = (si, ii) => {
+    if (ii === 0) return;
+    setSecs(p => p.map((s, i) => {
+      if (i !== si) return s;
+      const items = [...s.items];
+      [items[ii-1], items[ii]] = [items[ii], items[ii-1]];
+      return { ...s, items };
+    }));
+  };
+  const moveDown = (si, ii) => {
+    setSecs(p => p.map((s, i) => {
+      if (i !== si) return s;
+      if (ii >= s.items.length - 1) return s;
+      const items = [...s.items];
+      [items[ii], items[ii+1]] = [items[ii+1], items[ii]];
+      return { ...s, items };
+    }));
+  };
+  const startEdit = (si, ii, text) => setEditIdx(p => ({ ...p, [`${si}-${ii}`]: text }));
+  const saveEdit = (si, ii) => {
+    const t = (editIdx[`${si}-${ii}`]||"").trim();
+    if (!t) return;
+    setSecs(p => p.map((s, i) => i !== si ? s : { ...s, items: s.items.map((item, j) => j !== ii ? item : { ...item, text: t }) }));
+    setEditIdx(p => { const n = {...p}; delete n[`${si}-${ii}`]; return n; });
+  };
+
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:100, overflowY:"auto", padding:16 }}>
-      <div style={{ background:"#fff", borderRadius:4, maxWidth:560, margin:"0 auto", padding:20 }}>
+      <div style={{ background:"#fff", borderRadius:4, maxWidth:580, margin:"0 auto", padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
           <div style={{ fontSize:14 }}>{menu.label} — 項目編集</div>
           <button onClick={onClose} style={{ ...st.btn("sm"), color:pal.muted }}>閉じる</button>
         </div>
         {secs.map((sec, si) => (
-          <div key={si} style={{ marginBottom:16 }}>
+          <div key={si} style={{ marginBottom:20 }}>
             <div style={{ fontSize:11, color:pal.gold, marginBottom:8, letterSpacing:"0.1em" }}>{sec.name}</div>
-            {sec.items.map((item, ii) => (
-              <div key={ii} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                <div style={{ flex:1, fontSize:13, color:pal.text, lineHeight:1.4 }}>{item.text}</div>
-                <button onClick={() => del(si, ii)} style={{ ...st.btn("sm"), color:"#c44", border:"1px solid #c44", padding:"3px 10px", fontSize:11 }}>削除</button>
-              </div>
-            ))}
-            <div style={{ display:"flex", gap:8, marginTop:8 }}>
+            {sec.items.map((item, ii) => {
+              const eKey = `${si}-${ii}`;
+              const isEditing = eKey in editIdx;
+              return (
+                <div key={ii} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                  {/* 順番ボタン */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+                    <button onClick={() => moveUp(si, ii)} style={{ background:"none", border:`1px solid ${pal.border}`, borderRadius:2, width:22, height:18, cursor:"pointer", fontSize:10, color:pal.muted, display:"flex", alignItems:"center", justifyContent:"center" }}>▲</button>
+                    <button onClick={() => moveDown(si, ii)} style={{ background:"none", border:`1px solid ${pal.border}`, borderRadius:2, width:22, height:18, cursor:"pointer", fontSize:10, color:pal.muted, display:"flex", alignItems:"center", justifyContent:"center" }}>▼</button>
+                  </div>
+                  {/* テキスト or 編集入力 */}
+                  {isEditing ? (
+                    <input
+                      value={editIdx[eKey]}
+                      onChange={e => setEditIdx(p => ({ ...p, [eKey]: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && saveEdit(si, ii)}
+                      autoFocus
+                      style={{ flex:1, background:pal.bg, border:`1px solid ${pal.gold}`, borderRadius:2, padding:"5px 8px", fontSize:13, color:pal.text }}
+                    />
+                  ) : (
+                    <div style={{ flex:1, fontSize:13, color:pal.text, lineHeight:1.4 }}>{item.text}</div>
+                  )}
+                  {/* 編集・確定・削除 */}
+                  {isEditing ? (
+                    <button onClick={() => saveEdit(si, ii)} style={{ ...st.btn("sm"), color:pal.gold, border:`1px solid ${pal.gold}`, padding:"3px 10px", fontSize:11, flexShrink:0 }}>確定</button>
+                  ) : (
+                    <button onClick={() => startEdit(si, ii, item.text)} style={{ ...st.btn("sm"), color:pal.muted, padding:"3px 10px", fontSize:11, flexShrink:0 }}>編集</button>
+                  )}
+                  <button onClick={() => del(si, ii)} style={{ ...st.btn("sm"), color:"#c44", border:"1px solid #c44", padding:"3px 10px", fontSize:11, flexShrink:0 }}>削除</button>
+                </div>
+              );
+            })}
+            {/* 新規追加 */}
+            <div style={{ display:"flex", gap:8, marginTop:10 }}>
               <input value={newT[si]||""} onChange={e => setNewT(p => ({ ...p, [si]:e.target.value }))} onKeyDown={e => e.key==="Enter" && add(si)} placeholder="新しい項目を入力..." style={{ flex:1, background:pal.bg, border:`1px solid ${pal.border}`, borderRadius:2, padding:"6px 10px", fontSize:12, color:pal.text }} />
               <button onClick={() => add(si)} style={{ ...st.btn("sm"), color:pal.gold, border:`1px solid ${pal.gold}` }}>追加</button>
             </div>
