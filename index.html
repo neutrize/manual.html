@@ -459,17 +459,17 @@ function Checklist({ menu: menuProp, existing, staffId, menuId, onSave, isAdmin,
   );
 }
 
-function MenuList({ user, scores, onSave, isAdmin, canEdit, readOnly, reqs, onReq }) {
+function MenuList({ user, scores, onSave, isAdmin, canEdit, readOnly, reqs, onReq, menus, onUpdateMenu }) {
   const [sel, setSel] = useState(null);
   const sc = scores[user.id]||{};
   if (sel) {
-    const menu = MENUS.find(m => m.id === sel);
-    return <Checklist menu={menu} existing={sc[sel]||{}} staffId={user.id} menuId={sel} onSave={onSave} isAdmin={isAdmin} canEdit={canEdit} readOnly={readOnly} evaluator={user.name} req={reqs[sel]||makeReq(menu)} onReq={onReq} onBack={() => setSel(null)} />;
+    const menu = menus.find(m => m.id === sel);
+    return <Checklist menu={menu} existing={sc[sel]||{}} staffId={user.id} menuId={sel} onSave={onSave} isAdmin={isAdmin} canEdit={canEdit} readOnly={readOnly} evaluator={user.name} req={reqs[sel]||makeReq(menu)} onReq={onReq} onUpdateMenu={onUpdateMenu} onBack={() => setSel(null)} />;
   }
   return (
     <div style={{ padding:16 }}>
       <div style={st.label}>メニュー別チェックリスト</div>
-      {MENUS.map(m => {
+      {menus.map(m => {
         const msc = sc[m.id]||{};
         const checks = msc.checks && Object.keys(msc.checks).length > 0 ? msc.checks : makeEmpty(m);
         const done = countDone(checks);
@@ -502,17 +502,17 @@ function MenuList({ user, scores, onSave, isAdmin, canEdit, readOnly, reqs, onRe
   );
 }
 
-function Dashboard({ scores, reqs, onSelect }) {
-  const tMax = MENUS.reduce((a, m) => a + m.sections.reduce((b, s) => b + s.items.length, 0), 0);
+function Dashboard({ scores, reqs, menus, onSelect }) {
+  const tMax = menus.reduce((a, m) => a + m.sections.reduce((b, s) => b + s.items.length, 0), 0);
   return (
     <div style={{ padding:"20px 16px" }}>
       <div style={st.label}>スタッフ進捗一覧</div>
       {STAFF.map(s => {
         const sc = scores[s.id]||{};
-        const tDone = MENUS.reduce((a, m) => a + countDone(sc[m.id]?.checks||makeEmpty(m)), 0);
+        const tDone = menus.reduce((a, m) => a + countDone(sc[m.id]?.checks||makeEmpty(m)), 0);
         const pct = Math.round((tDone/tMax)*100);
-        const pass = MENUS.filter(m => tDone > 0 && (sc[m.id]?.passed || isPassed(m, sc[m.id]?.checks||makeEmpty(m), reqs[m.id]||makeReq(m)))).length;
-        const evs = [...new Set(MENUS.map(m => sc[m.id]?.evaluator).filter(Boolean))];
+        const pass = menus.filter(m => tDone > 0 && (sc[m.id]?.passed || isPassed(m, sc[m.id]?.checks||makeEmpty(m), reqs[m.id]||makeReq(m)))).length;
+        const evs = [...new Set(menus.map(m => sc[m.id]?.evaluator).filter(Boolean))];
         return (
           <div key={s.id} onClick={() => onSelect(s)} style={{ ...st.card, display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
             <Avatar s={s} />
@@ -536,14 +536,14 @@ function Dashboard({ scores, reqs, onSelect }) {
   );
 }
 
-function StaffDetail({ staff, user, scores, onSave, reqs, onReq, onBack }) {
+function StaffDetail({ staff, user, scores, onSave, reqs, onReq, menus, onUpdateMenu, onBack }) {
   const [sel, setSel] = useState(null);
   const sc = scores[staff.id]||{};
-  const tMax = MENUS.reduce((a, m) => a + m.sections.reduce((b, s) => b + s.items.length, 0), 0);
-  const tDone = MENUS.reduce((a, m) => a + countDone(sc[m.id]?.checks||makeEmpty(m)), 0);
+  const tMax = menus.reduce((a, m) => a + m.sections.reduce((b, s) => b + s.items.length, 0), 0);
+  const tDone = menus.reduce((a, m) => a + countDone(sc[m.id]?.checks||makeEmpty(m)), 0);
   if (sel) {
-    const menu = MENUS.find(m => m.id === sel);
-    return <Checklist menu={menu} existing={sc[sel]||{}} staffId={staff.id} menuId={sel} onSave={onSave} isAdmin={true} canEdit={user.canEdit} evaluator={user.name} req={reqs[sel]||makeReq(menu)} onReq={onReq} onBack={() => setSel(null)} />;
+    const menu = menus.find(m => m.id === sel);
+    return <Checklist menu={menu} existing={sc[sel]||{}} staffId={staff.id} menuId={sel} onSave={onSave} isAdmin={true} canEdit={user.canEdit} evaluator={user.name} req={reqs[sel]||makeReq(menu)} onReq={onReq} onUpdateMenu={onUpdateMenu} onBack={() => setSel(null)} />;
   }
   return (
     <div>
@@ -555,7 +555,7 @@ function StaffDetail({ staff, user, scores, onSave, reqs, onReq, onBack }) {
       </div>
       <div style={{ padding:16 }}>
         <div style={st.label}>メニュー別評価</div>
-        {MENUS.map(m => {
+        {menus.map(m => {
           const msc = sc[m.id]||{};
           const checks = msc.checks && Object.keys(msc.checks).length > 0 ? msc.checks : makeEmpty(m);
           const done = countDone(checks);
@@ -629,7 +629,7 @@ function App() {
     return o;
   });
 
-  const loadScores = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
       const rows = await sbGet("scores", "select=staff_id,menu_id,data");
@@ -642,14 +642,26 @@ function App() {
         setScores(rebuilt);
       }
     } catch(e) { console.error(e); }
+    try {
+      const rows = await sbGet("menus", "select=id,sections");
+      if (Array.isArray(rows) && rows.length > 0) {
+        const updatedMenus = MENUS.map(m => {
+          const found = rows.find(r => r.id === m.id);
+          return found ? { ...m, sections: found.sections } : m;
+        });
+        setMenus(updatedMenus);
+      }
+    } catch(e) { console.error(e); }
     setLoading(false);
   };
 
   const handleLogin = async (u) => {
     setUser(u);
     setTab(u.isAdmin ? "admin" : "checklist");
-    await loadScores();
+    await loadData();
   };
+
+  const [menus, setMenus] = useState(MENUS);
 
   const saveScore = async (sid, mid, data) => {
     setScores(p => ({ ...p, [sid]:{ ...(p[sid]||{}), [mid]:data } }));
@@ -657,6 +669,14 @@ function App() {
   };
 
   const handleReq = (mid, k, v) => setReqs(p => ({ ...p, [mid]:{ ...p[mid], [k]:v } }));
+
+  const handleUpdateMenu = async (menuId, newSecs) => {
+    const updated = menus.map(m => m.id !== menuId ? m : { ...m, sections: newSecs });
+    setMenus(updated);
+    try {
+      await sbUpsert("menus", { id: menuId, sections: newSecs, updated_at: new Date().toISOString() });
+    } catch(e) { console.error("menu save error", e); }
+  };
 
   if (!user) return <Login onLogin={handleLogin} />;
 
@@ -676,9 +696,9 @@ function App() {
       <div style={st.nav}>{tabs.map(t => <button key={t.id} onClick={() => { setTab(t.id); setAdminSel(null); }} style={st.nb(tab===t.id)}>{t.label}</button>)}</div>
       {loading && <div style={{ padding:20, textAlign:"center", fontSize:12, color:pal.muted }}>読み込み中...</div>}
       {!loading && tab === "manual" && <Manual />}
-      {!loading && tab === "checklist" && <MenuList user={user} scores={scores} onSave={saveScore} isAdmin={user.isAdmin} canEdit={user.canEdit||false} readOnly={!user.isAdmin} reqs={reqs} onReq={handleReq} />}
-      {!loading && tab === "admin" && !adminSel && <Dashboard scores={scores} reqs={reqs} onSelect={setAdminSel} />}
-      {!loading && tab === "admin" && adminSel && <StaffDetail staff={adminSel} user={user} scores={scores} onSave={saveScore} reqs={reqs} onReq={handleReq} onBack={() => setAdminSel(null)} />}
+      {!loading && tab === "checklist" && <MenuList user={user} scores={scores} onSave={saveScore} isAdmin={user.isAdmin} canEdit={user.canEdit||false} readOnly={!user.isAdmin} reqs={reqs} onReq={handleReq} menus={menus} onUpdateMenu={handleUpdateMenu} />}
+      {!loading && tab === "admin" && !adminSel && <Dashboard scores={scores} reqs={reqs} menus={menus} onSelect={setAdminSel} />}
+      {!loading && tab === "admin" && adminSel && <StaffDetail staff={adminSel} user={user} scores={scores} onSave={saveScore} reqs={reqs} onReq={handleReq} menus={menus} onUpdateMenu={handleUpdateMenu} onBack={() => setAdminSel(null)} />}
     </div>
   );
 }
