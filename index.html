@@ -652,6 +652,14 @@ function App() {
         setMenus(updatedMenus);
       }
     } catch(e) { console.error(e); }
+    try {
+      const rows = await sbGet("req_maps", "select=id,req_data");
+      if (Array.isArray(rows) && rows.length > 0) {
+        const newReqs = {};
+        rows.forEach(r => { newReqs[r.id] = r.req_data; });
+        setReqs(p => ({ ...p, ...newReqs }));
+      }
+    } catch(e) { console.error(e); }
     setLoading(false);
   };
 
@@ -668,7 +676,13 @@ function App() {
     await sbUpsert("scores", { id:`${sid}_${mid}`, staff_id:sid, menu_id:mid, data, updated_at:new Date().toISOString() });
   };
 
-  const handleReq = (mid, k, v) => setReqs(p => ({ ...p, [mid]:{ ...p[mid], [k]:v } }));
+  const handleReq = async (mid, k, v) => {
+    const next = { ...reqs, [mid]: { ...reqs[mid], [k]: v } };
+    setReqs(next);
+    try {
+      await sbUpsert("req_maps", { id: mid, req_data: next[mid], updated_at: new Date().toISOString() });
+    } catch(e) { console.error("req save error", e); }
+  };
 
   const handleUpdateMenu = async (menuId, newSecs) => {
     const updated = menus.map(m => m.id !== menuId ? m : { ...m, sections: newSecs });
